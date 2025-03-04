@@ -22,8 +22,10 @@ const DualNBackGame = () => {
   
   // Using useMemo for arrays to prevent recreation on every render
   const LETTERS = useMemo(() => ['c', 'h', 'k', 'l', 'q', 'r', 's', 't'], []);
-  const MATCH_FREQUENCY = 0.3; // Strict rate for both channels
-  const INTERFERENCE_LEVEL = 0.1; // Changed to 10%
+  
+  // Adapted from brainworkshop.py
+  const CHANCE_OF_GUARANTEED_MATCH = 0.125; // From brainworkshop's default
+  const CHANCE_OF_INTERFERENCE = 0.125; // From brainworkshop's default
   
   // Refs
   const timerRef = useRef(null);
@@ -44,25 +46,26 @@ const DualNBackGame = () => {
     audioResponsesRef.current = audioResponses;
   }, [audioResponses]);
   
-  // Generate trials with strict match enforcement
+  // Generate trials using brainworkshop's algorithm
   const generateTrials = useCallback(() => {
+    // Following brainworkshop's compute_bt_sequence() logic for Jaeggi mode
+    // but adapting it to be more flexible
+    
+    const visualSequence = [];
+    const audioSequence = [];
     const newTrials = [];
-    const visualHistory = [];
-    const audioHistory = [];
     
-    // Helper functions to get random stimuli
-    const getRandomPosition = () => ({
-      row: Math.floor(Math.random() * GRID_SIZE),
-      col: Math.floor(Math.random() * GRID_SIZE)
-    });
-    const getRandomLetter = () => LETTERS[Math.floor(Math.random() * LETTERS.length)];
-    
-    // First nValue trials: seed trials with no matches
+    // First generate the n initial trials without matches
     for (let i = 0; i < nValue; i++) {
-      const position = getRandomPosition();
-      const letter = getRandomLetter();
-      visualHistory.push(position);
-      audioHistory.push(letter);
+      const position = {
+        row: Math.floor(Math.random() * GRID_SIZE),
+        col: Math.floor(Math.random() * GRID_SIZE)
+      };
+      const letter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+      
+      visualSequence.push(position);
+      audioSequence.push(letter);
+      
       newTrials.push({
         position,
         letter,
@@ -73,92 +76,224 @@ const DualNBackGame = () => {
       });
     }
     
-    // Candidate trials (from index nValue to TOTAL_TRIALS - 1)
-    const candidateCount = TOTAL_TRIALS - nValue;
-    const numVisualMatches = Math.floor(candidateCount * MATCH_FREQUENCY);
-    const numAudioMatches = Math.floor(candidateCount * MATCH_FREQUENCY);
+    // Target match counts for the remaining trials
+    const remainingTrials = TOTAL_TRIALS - nValue;
+    // In Jaeggi mode, brainworkshop uses exactly 6 position matches, 6 audio matches
+    // with 2 simultaneous matches. We'll set a percentage based on total trials.
+    const targetVisualMatches = Math.round(remainingTrials * 0.3); // ~30% match rate
+    const targetAudioMatches = Math.round(remainingTrials * 0.3);
+    const targetBothMatches = Math.min(2, Math.floor(remainingTrials * 0.1)); // Similar to brainworkshop's 2 out of 20+
     
-    // Preselect match indices for each channel
-    const visualMatchIndices = new Set();
-    while (visualMatchIndices.size < numVisualMatches) {
-      const index = Math.floor(Math.random() * candidateCount) + nValue;
-      visualMatchIndices.add(index);
-    }
-    const audioMatchIndices = new Set();
-    while (audioMatchIndices.size < numAudioMatches) {
-      const index = Math.floor(Math.random() * candidateCount) + nValue;
-      audioMatchIndices.add(index);
+    // Initialize match counters
+    let visualMatches = 0;
+    let audioMatches = 0;
+    let bothMatches = 0;
+    
+    // Use a brute force approach like in compute_bt_sequence()
+    let attempts = 0;
+    const maxAttempts = 1000; // Safety mechanism
+    
+    while ((visualMatches !== targetVisualMatches || 
+            audioMatches !== targetAudioMatches || 
+            bothMatches !== targetBothMatches) && 
+           attempts < maxAttempts) {
+      
+      attempts++;
+      
+      // Reset trial generation after the initial n trials
+      newTrials.length = nValue;
+      visualSequence.length = nValue;
+      audioSequence.length = nValue;
+      visualMatches = 0;
+      audioMatches = 0;
+      bothMatches = 0;
+      
+      // Generate the remaining trials
+      for (let i = nValue; i < TOTAL_TRIALS; i++) {
+        let position, letter;
+        let visualMatch = false;
+        let audioMatch = false;
+        let visualLure = false;
+        let audioLure = false;
+        
+        // Visual stimulus (position)
+        // Decide if this should be a match, based on match count needed and random chance
+        if ((visualMatches < targetVisualMatches) && 
+            (Math.random() < CHANCE_OF_GUARANTEED_MATCH || 
+             (visualMatches < targetVisualMatches - (TOTAL_TRIALS - i)))) {
+          // Force a match to meet our target
+          position = { ...visualSequence[i - nValue] };
+          visualMatch = true;
+          visualMatches++;
+        } else if (Math.random() < CHANCE_OF_INTERFERENCE && i > nValue + 1) {
+          // Create a lure trial (n+1 or n-1 back)
+          // This follows brainworkshop's logic for interference
+          const interferenceOptions = [-1, 1, nValue];
+          const lureOffset = interferenceOptions[Math.floor(Math.random() * interferenceOptions.length)];
+          
+          if (i - nValue - lureOffset >= 0 && i - nValue - lureOffset < visualSequence.length) {
+            // Check that it doesn't create an accidental n-back match
+            const lurePosition = visualSequence[i - nValue - lureOffset];
+            const nBackPosition = visualSequence[i - nValue];
+            
+            if (!(lurePosition.row === nBackPosition.row && lurePosition.col === nBackPosition.col)) {
+              position = { ...lurePosition };
+              visualLure = true;
+            } else {
+              // Generate a random position
+              position = {
+                row: Math.floor(Math.random() * GRID_SIZE),
+                col: Math.floor(Math.random() * GRID_SIZE)
+              };
+            }
+          } else {
+            // Fallback to random position
+            position = {
+              row: Math.floor(Math.random() * GRID_SIZE),
+              col: Math.floor(Math.random() * GRID_SIZE)
+            };
+          }
+        } else {
+          // Generate a non-matching position
+          let newPosition;
+          do {
+            newPosition = {
+              row: Math.floor(Math.random() * GRID_SIZE),
+              col: Math.floor(Math.random() * GRID_SIZE)
+            };
+          } while (
+            newPosition.row === visualSequence[i - nValue].row && 
+            newPosition.col === visualSequence[i - nValue].col
+          );
+          position = newPosition;
+        }
+        
+        // Audio stimulus (letter)
+        // Similar logic as for visual
+        if ((audioMatches < targetAudioMatches) && 
+            (Math.random() < CHANCE_OF_GUARANTEED_MATCH || 
+             (audioMatches < targetAudioMatches - (TOTAL_TRIALS - i)))) {
+          // Force a match to meet our target
+          letter = audioSequence[i - nValue];
+          audioMatch = true;
+          audioMatches++;
+        } else if (Math.random() < CHANCE_OF_INTERFERENCE && i > nValue + 1) {
+          // Create a lure trial
+          const interferenceOptions = [-1, 1, nValue];
+          const lureOffset = interferenceOptions[Math.floor(Math.random() * interferenceOptions.length)];
+          
+          if (i - nValue - lureOffset >= 0 && i - nValue - lureOffset < audioSequence.length) {
+            const lureLetter = audioSequence[i - nValue - lureOffset];
+            const nBackLetter = audioSequence[i - nValue];
+            
+            if (lureLetter !== nBackLetter) {
+              letter = lureLetter;
+              audioLure = true;
+            } else {
+              // Get a random letter that's not a match
+              let randomLetter;
+              do {
+                randomLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+              } while (randomLetter === nBackLetter);
+              letter = randomLetter;
+            }
+          } else {
+            // Fallback to random letter
+            letter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+          }
+        } else {
+          // Generate a non-matching letter
+          let newLetter;
+          do {
+            newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+          } while (newLetter === audioSequence[i - nValue]);
+          letter = newLetter;
+        }
+        
+        // Check and adjust for combined matches
+        if (visualMatch && audioMatch) {
+          bothMatches++;
+          
+          // If we already have enough combined matches, undo one of them
+          if (bothMatches > targetBothMatches) {
+            // Decide which one to undo
+            if (Math.random() < 0.5 && visualMatches > 1) {
+              // Undo visual match
+              visualMatch = false;
+              visualMatches--;
+              
+              // Generate a new non-matching position
+              let newPosition;
+              do {
+                newPosition = {
+                  row: Math.floor(Math.random() * GRID_SIZE),
+                  col: Math.floor(Math.random() * GRID_SIZE)
+                };
+              } while (
+                newPosition.row === visualSequence[i - nValue].row && 
+                newPosition.col === visualSequence[i - nValue].col
+              );
+              position = newPosition;
+            } else if (audioMatches > 1) {
+              // Undo audio match
+              audioMatch = false;
+              audioMatches--;
+              
+              // Generate a new non-matching letter
+              let newLetter;
+              do {
+                newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+              } while (newLetter === audioSequence[i - nValue]);
+              letter = newLetter;
+            }
+            bothMatches--;
+          }
+        }
+        
+        // If we need more combined matches and we're running out of trials
+        if (bothMatches < targetBothMatches && i >= TOTAL_TRIALS - (targetBothMatches - bothMatches) * 2) {
+          // Force both to match
+          position = { ...visualSequence[i - nValue] };
+          letter = audioSequence[i - nValue];
+          visualMatch = true;
+          audioMatch = true;
+          
+          // Update counters (avoid double counting)
+          if (!visualMatch) visualMatches++;
+          if (!audioMatch) audioMatches++;
+          bothMatches++;
+        }
+        
+        // Add to sequences
+        visualSequence.push(position);
+        audioSequence.push(letter);
+        
+        // Add trial
+        newTrials.push({
+          position,
+          letter,
+          visualMatch,
+          audioMatch,
+          visualLure,
+          audioLure
+        });
+      }
     }
     
-    // Generate remaining trials
-    for (let i = nValue; i < TOTAL_TRIALS; i++) {
-      let position, letter;
-      let visualMatch = false;
-      let audioMatch = false;
-      let visualLure = false;
-      let audioLure = false;
-      
-      // Visual channel
-      if (visualMatchIndices.has(i)) {
-        position = { ...visualHistory[i - nValue] };
-        visualMatch = true;
-      } else if (Math.random() < INTERFERENCE_LEVEL) {
-        const lureOffset = Math.random() < 0.5 ? nValue - 1 : nValue + 1;
-        if (i - lureOffset >= 0 && i - lureOffset < visualHistory.length) {
-          position = { ...visualHistory[i - lureOffset] };
-          visualLure = true;
-        } else {
-          position = getRandomPosition();
-        }
-      } else {
-        let pos;
-        do {
-          pos = getRandomPosition();
-        } while (pos.row === visualHistory[i - nValue].row && pos.col === visualHistory[i - nValue].col);
-        position = pos;
-      }
-      
-      // Audio channel
-      if (audioMatchIndices.has(i)) {
-        letter = audioHistory[i - nValue];
-        audioMatch = true;
-      } else if (Math.random() < INTERFERENCE_LEVEL) {
-        const lureOffset = Math.random() < 0.5 ? nValue - 1 : nValue + 1;
-        if (i - lureOffset >= 0 && i - lureOffset < audioHistory.length) {
-          letter = audioHistory[i - lureOffset];
-          audioLure = true;
-        } else {
-          letter = getRandomLetter();
-        }
-      } else {
-        let l;
-        do {
-          l = getRandomLetter();
-        } while (l === audioHistory[i - nValue]);
-        letter = l;
-      }
-      
-      visualHistory.push(position);
-      audioHistory.push(letter);
-      
-      newTrials.push({
-        position,
-        letter,
-        visualMatch,
-        audioMatch,
-        visualLure,
-        audioLure
-      });
+    if (attempts >= maxAttempts) {
+      console.warn('Could not generate ideal trial distribution after maximum attempts');
     }
+    
+    // Verify and log the distribution (for debugging)
+    const finalVisualMatches = newTrials.filter(t => t.visualMatch).length;
+    const finalAudioMatches = newTrials.filter(t => t.audioMatch).length;
+    const finalBothMatches = newTrials.filter(t => t.visualMatch && t.audioMatch).length;
+    console.log(`Generated: ${finalVisualMatches} visual, ${finalAudioMatches} audio, ${finalBothMatches} both matches`);
     
     return newTrials;
-  }, [nValue, TOTAL_TRIALS, GRID_SIZE, LETTERS, MATCH_FREQUENCY, INTERFERENCE_LEVEL]);
+  }, [nValue, TOTAL_TRIALS, GRID_SIZE, LETTERS]);
   
-  // Calculate final score for each channel.
-  // Only count a correct hit if the player pressed and the trial is a match.
-  // If a trial is a match and no press was made, it's a miss.
-  // If a trial is not a match and the player pressed, it's a false alarm.
-  // Trials with no match and no response are not counted.
+  // Calculate final score for each channel (unchanged from original)
   const calculateFinalScore = useCallback(() => {
     let visualScore = { correct: 0, missed: 0, falseAlarms: 0 };
     let audioScore = { correct: 0, missed: 0, falseAlarms: 0 };
@@ -199,7 +334,7 @@ const DualNBackGame = () => {
     setGameState('result');
   }, [trials]);
   
-  // Advance to the next trial (with a 0.1 second break)
+  // Advance to the next trial (unchanged from original)
   const advanceTrial = useCallback(() => {
     setIsBreak(true);
     breakTimerRef.current = setTimeout(() => {
@@ -211,7 +346,7 @@ const DualNBackGame = () => {
     }, 100);
   }, [TOTAL_TRIALS]);
   
-  // Start a new game
+  // Start a new game (unchanged from original)
   const startGame = useCallback(() => {
     clearTimeout(timerRef.current);
     clearTimeout(breakTimerRef.current);
@@ -234,7 +369,7 @@ const DualNBackGame = () => {
     }
   }, [generateTrials, TOTAL_TRIALS]);
   
-  // Handle keyboard inputs
+  // Handle keyboard inputs (unchanged from original)
   const handleKeyDown = useCallback((e) => {
     if (gameState !== 'playing' || isBreak) return;
     
@@ -257,7 +392,7 @@ const DualNBackGame = () => {
     }
   }, [gameState, currentTrial, isBreak, startGame]);
   
-  // Play audio for the current trial
+  // Play audio for the current trial (unchanged from original)
   useEffect(() => {
     if (gameState === 'playing' && currentTrial < trials.length) {
       const speak = () => {
@@ -277,7 +412,7 @@ const DualNBackGame = () => {
     }
   }, [gameState, currentTrial, trials]);
   
-  // Timer for advancing trials automatically
+  // Timer for advancing trials (unchanged from original)
   useEffect(() => {
     if (gameState !== 'playing') return;
     
@@ -303,7 +438,7 @@ const DualNBackGame = () => {
     };
   }, [gameState, currentTrial, isBreak, TOTAL_TRIALS, TRIAL_DURATION, advanceTrial, calculateFinalScore]);
   
-  // Keyboard event listener
+  // Keyboard event listener (unchanged from original)
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -312,7 +447,7 @@ const DualNBackGame = () => {
     };
   }, [handleKeyDown]);
   
-  // Start Screen Component
+  // Start Screen Component (unchanged from original)
   const StartScreen = () => (
     <div className="screen start-screen">
       <div className="help-button-container">
@@ -342,7 +477,7 @@ const DualNBackGame = () => {
     </div>
   );
 
-  // Help Screen Component
+  // Help Screen Component (unchanged from original)
   const HelpScreen = () => (
     <div className="screen help-screen">
       <h1>How to Play Dual N-Back</h1>
@@ -400,7 +535,7 @@ const DualNBackGame = () => {
     </div>
   );
   
-  // Game Screen Component
+  // Game Screen Component (unchanged from original)
   const GameScreen = () => {
     const currentPosition = trials[currentTrial]?.position || { row: 0, col: 0 };
     
@@ -454,7 +589,7 @@ const DualNBackGame = () => {
     );
   };
   
-  // Result Screen Component (separate visual and audio results)
+  // Result Screen Component (unchanged from original)
   const ResultScreen = () => {
     // Denominator is only the sum of (correct + misses + false alarms)
     const visualTotal = score.visual.correct + score.visual.missed + score.visual.falseAlarms;
