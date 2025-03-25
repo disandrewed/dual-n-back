@@ -1115,17 +1115,21 @@ const DualNBackGame = () => {
           }
           
           .result-buttons {
-            flex-direction: column;
+            flex-direction: row; /* Keep buttons horizontal */
+            flex-wrap: wrap;
+            justify-content: center;
             width: 100%;
           }
           
           .play-button, .play-again-button, .back-button {
-            width: 100%;
-            margin: 0.3rem 0;
+            width: auto; /* Allow natural width */
+            min-width: 120px;
+            margin: 0.3rem 0.5rem;
           }
           
           h1 {
             font-size: 1.5rem;
+            margin-top: 3rem; /* Add more space at the top for the controls */
           }
           
           h2 {
@@ -1140,12 +1144,16 @@ const DualNBackGame = () => {
         
         @media (max-width: 480px) {
           .response-indicators {
-            flex-direction: column;
+            flex-direction: row; /* Keep buttons horizontal */
+            flex-wrap: wrap;
+            justify-content: center;
           }
           
           .indicator {
-            margin: 0.3rem 0;
-            width: 100%;
+            margin: 0.3rem 0.5rem;
+            width: auto; /* Allow natural width */
+            min-width: 120px; /* Set minimum width */
+            flex: 0 1 auto; /* Don't force equal growth */
           }
           
           .game-header {
