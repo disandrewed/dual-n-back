@@ -15,6 +15,9 @@ const DualNBackGame = () => {
   const [audioResponses, setAudioResponses] = useState([]);
   const [isBreak, setIsBreak] = useState(false);
   
+  // Theme state
+  const [darkMode, setDarkMode] = useState(false);
+  
   // Constants
   const TOTAL_TRIALS = 20 + nValue;
   const GRID_SIZE = 3;
@@ -45,6 +48,39 @@ const DualNBackGame = () => {
   useEffect(() => {
     audioResponsesRef.current = audioResponses;
   }, [audioResponses]);
+  
+  // Add dark mode persistence
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('dualNBackTheme');
+    if (savedTheme) {
+      setDarkMode(savedTheme === 'dark');
+    } else {
+      // Check if user prefers dark mode
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setDarkMode(prefersDark);
+    }
+  }, []);
+  
+  // Save theme preference
+  useEffect(() => {
+    localStorage.setItem('dualNBackTheme', darkMode ? 'dark' : 'light');
+    
+    // Apply dark mode to body for complete theme coverage
+    if (darkMode) {
+      document.body.classList.add('dark-mode');
+    } else {
+      document.body.classList.remove('dark-mode');
+    }
+    
+    return () => {
+      document.body.classList.remove('dark-mode');
+    };
+  }, [darkMode]);
+  
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setDarkMode(prev => !prev);
+  };
   
   // Generate trials using brainworkshop's algorithm
   const generateTrials = useCallback(() => {
@@ -293,7 +329,7 @@ const DualNBackGame = () => {
     return newTrials;
   }, [nValue, TOTAL_TRIALS, GRID_SIZE, LETTERS]);
   
-  // Calculate final score for each channel (unchanged from original)
+  // Calculate final score for each channel
   const calculateFinalScore = useCallback(() => {
     let visualScore = { correct: 0, missed: 0, falseAlarms: 0 };
     let audioScore = { correct: 0, missed: 0, falseAlarms: 0 };
@@ -334,7 +370,7 @@ const DualNBackGame = () => {
     setGameState('result');
   }, [trials]);
   
-  // Advance to the next trial (unchanged from original)
+  // Advance to the next trial
   const advanceTrial = useCallback(() => {
     setIsBreak(true);
     breakTimerRef.current = setTimeout(() => {
@@ -346,7 +382,7 @@ const DualNBackGame = () => {
     }, 100);
   }, [TOTAL_TRIALS]);
   
-  // Start a new game (unchanged from original)
+  // Start a new game
   const startGame = useCallback(() => {
     clearTimeout(timerRef.current);
     clearTimeout(breakTimerRef.current);
@@ -369,7 +405,7 @@ const DualNBackGame = () => {
     }
   }, [generateTrials, TOTAL_TRIALS]);
   
-  // Handle keyboard inputs (unchanged from original)
+  // Handle keyboard inputs
   const handleKeyDown = useCallback((e) => {
     if (gameState !== 'playing' || isBreak) return;
     
@@ -392,7 +428,7 @@ const DualNBackGame = () => {
     }
   }, [gameState, currentTrial, isBreak, startGame]);
   
-  // Play audio for the current trial (unchanged from original)
+  // Play audio for the current trial
   useEffect(() => {
     if (gameState === 'playing' && currentTrial < trials.length) {
       const speak = () => {
@@ -412,7 +448,7 @@ const DualNBackGame = () => {
     }
   }, [gameState, currentTrial, trials]);
   
-  // Timer for advancing trials (unchanged from original)
+  // Timer for advancing trials
   useEffect(() => {
     if (gameState !== 'playing') return;
     
@@ -438,7 +474,7 @@ const DualNBackGame = () => {
     };
   }, [gameState, currentTrial, isBreak, TOTAL_TRIALS, TRIAL_DURATION, advanceTrial, calculateFinalScore]);
   
-  // Keyboard event listener (unchanged from original)
+  // Keyboard event listener
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -447,13 +483,25 @@ const DualNBackGame = () => {
     };
   }, [handleKeyDown]);
   
-  // Start Screen Component (unchanged from original)
+  // Theme toggle button
+  const ThemeToggle = () => (
+    <button 
+      className={`theme-toggle ${darkMode ? 'dark' : 'light'}`}
+      onClick={toggleDarkMode}
+      aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+    >
+      {darkMode ? '☀️' : '🌙'}
+    </button>
+  );
+  
+  // Start Screen Component
   const StartScreen = () => (
     <div className="screen start-screen">
-      <div className="help-button-container">
+      <div className="top-controls">
         <button className="help-button" onClick={() => setGameState('help')}>
           ?
         </button>
+        <ThemeToggle />
       </div>
       <h1>Dual N-Back Game</h1>
       <div className="n-selector">
@@ -477,9 +525,12 @@ const DualNBackGame = () => {
     </div>
   );
 
-  // Help Screen Component (unchanged from original)
+  // Help Screen Component
   const HelpScreen = () => (
     <div className="screen help-screen">
+      <div className="top-controls right-aligned">
+        <ThemeToggle />
+      </div>
       <h1>How to Play Dual N-Back</h1>
       
       <div className="help-section">
@@ -535,7 +586,7 @@ const DualNBackGame = () => {
     </div>
   );
   
-  // Game Screen Component (unchanged from original)
+  // Game Screen Component
   const GameScreen = () => {
     const currentPosition = trials[currentTrial]?.position || { row: 0, col: 0 };
     
@@ -561,9 +612,15 @@ const DualNBackGame = () => {
     
     return (
       <div className="screen game-screen" ref={gameRef} tabIndex={0}>
-        <div className="game-info">
-          <div className="n-value">N = {nValue}</div>
-          <div className="trial-counter">Trial: {currentTrial + 1} / {TOTAL_TRIALS}</div>
+        <div className="game-header">
+          <div className="game-info">
+            <div className="n-value">N = {nValue}</div>
+            <div className="trial-counter">Trial: {currentTrial + 1} / {TOTAL_TRIALS}</div>
+          </div>
+          <div className="game-controls">
+            <button className="quit-button" onClick={() => setGameState('start')}>Quit</button>
+            <ThemeToggle />
+          </div>
         </div>
         <div className="grid-container">
           {Array(GRID_SIZE).fill().map((_, rowIndex) => (
@@ -589,7 +646,7 @@ const DualNBackGame = () => {
     );
   };
   
-  // Result Screen Component (unchanged from original)
+  // Result Screen Component
   const ResultScreen = () => {
     // Denominator is only the sum of (correct + misses + false alarms)
     const visualTotal = score.visual.correct + score.visual.missed + score.visual.falseAlarms;
@@ -599,6 +656,9 @@ const DualNBackGame = () => {
     
     return (
       <div className="screen result-screen">
+        <div className="top-controls right-aligned">
+          <ThemeToggle />
+        </div>
         <h2>Game Results</h2>
         <div className="results">
           <h3>Visual (Position) Results</h3>
@@ -636,30 +696,79 @@ const DualNBackGame = () => {
             <span>{audioScorePercentage}%</span>
           </div>
         </div>
-        <button className="play-again-button" onClick={startGame}>Play Again</button>
-        <button className="back-button" onClick={() => setGameState('start')}>Back to Start</button>
+        <div className="result-buttons">
+          <button className="play-again-button" onClick={startGame}>Play Again</button>
+          <button className="back-button" onClick={() => setGameState('start')}>Back to Start</button>
+        </div>
       </div>
     );
   };
   
   return (
-    <div className="dual-n-back-container">
+    <div className={`dual-n-back-container ${darkMode ? 'dark-theme' : 'light-theme'}`}>
       {gameState === 'start' && <StartScreen />}
       {gameState === 'playing' && <GameScreen />}
       {gameState === 'result' && <ResultScreen />}
       {gameState === 'help' && <HelpScreen />}
       
       <style jsx>{`
+        /* CSS variables for theming */
+        .light-theme {
+          --bg-color: #f5f5f5;
+          --card-bg: #ffffff;
+          --text-color: #333333;
+          --border-color: #dddddd;
+          --primary-color: #2196F3;
+          --primary-hover: #0d8bf2;
+          --success-color: #4CAF50;
+          --success-hover: #45a049;
+          --danger-color: #f44336;
+          --danger-hover: #d32f2f;
+          --cell-bg: #f9f9f9;
+          --cell-active: #2196F3;
+          --indicator-bg: #dddddd;
+          --indicator-active: #4CAF50;
+          --indicator-hover: #cccccc;
+          --result-border: #eeeeee;
+          --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .dark-theme {
+          --bg-color: #1a1a1a;
+          --card-bg: #2d2d2d;
+          --text-color: #e5e5e5;
+          --border-color: #444444;
+          --primary-color: #8c52ff;
+          --primary-hover: #7a42e5;
+          --success-color: #3bbc60;
+          --success-hover: #309e4f;
+          --danger-color: #e5534b;
+          --danger-hover: #c6433d;
+          --cell-bg: #3d3d3d;
+          --cell-active: #8c52ff;
+          --indicator-bg: #444444;
+          --indicator-active: #3bbc60;
+          --indicator-hover: #555555;
+          --result-border: #444444;
+          --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Base container styles */
         .dual-n-back-container {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           width: 100%;
-          height: 100vh;
-          background-color: #f5f5f5;
-          font-family: 'Arial', sans-serif;
+          min-height: 100vh;
+          background-color: var(--bg-color);
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+          color: var(--text-color);
+          transition: all 0.3s ease;
+          padding: 0.5rem;
+          box-sizing: border-box;
         }
+        
         .screen {
           display: flex;
           flex-direction: column;
@@ -667,22 +776,34 @@ const DualNBackGame = () => {
           justify-content: center;
           width: 100%;
           max-width: 600px;
-          padding: 2rem;
-          background-color: white;
+          padding: 1.5rem;
+          background-color: var(--card-bg);
           border-radius: 8px;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          box-shadow: var(--box-shadow);
           position: relative;
+          transition: all 0.3s ease;
+          margin-top: 1rem;
+          box-sizing: border-box;
         }
-        .help-button-container {
+        
+        .top-controls {
+          display: flex;
           position: absolute;
           top: 1rem;
           right: 1rem;
+          z-index: 10;
         }
-        .help-button {
+        
+        .right-aligned {
+          right: 1rem;
+          left: auto;
+        }
+        
+        .theme-toggle {
           width: 35px;
           height: 35px;
           border-radius: 50%;
-          background-color: #2196F3;
+          background-color: var(--primary-color);
           color: white;
           font-weight: bold;
           font-size: 1.2rem;
@@ -692,166 +813,363 @@ const DualNBackGame = () => {
           align-items: center;
           justify-content: center;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          margin-left: 0.5rem;
+          transition: all 0.3s ease;
         }
+        
+        .theme-toggle:hover {
+          background-color: var(--primary-hover);
+        }
+        
+        .help-button {
+          width: 35px;
+          height: 35px;
+          border-radius: 50%;
+          background-color: var(--primary-color);
+          color: white;
+          font-weight: bold;
+          font-size: 1.2rem;
+          border: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          transition: all 0.3s ease;
+        }
+        
         .help-button:hover {
-          background-color: #0d8bf2;
+          background-color: var(--primary-hover);
         }
-        .start-screen h1 {
+        
+        .start-screen h1, .help-screen h1 {
           margin-bottom: 2rem;
-          color: #333;
+          color: var(--text-color);
+          transition: color 0.3s ease;
         }
+        
         .n-selector {
           display: flex;
           align-items: center;
           margin-bottom: 2rem;
         }
+        
         .n-selector label {
           margin-right: 1rem;
           font-size: 1.2rem;
         }
+        
         .n-selector input {
           width: 60px;
           height: 40px;
           font-size: 1.2rem;
           text-align: center;
-          border: 1px solid #ddd;
+          border: 1px solid var(--border-color);
           border-radius: 4px;
+          background-color: var(--bg-color);
+          color: var(--text-color);
+          transition: all 0.3s ease;
         }
+        
         .play-button, .play-again-button, .back-button {
           padding: 0.8rem 2rem;
           font-size: 1.2rem;
           color: white;
-          background-color: #4CAF50;
+          background-color: var(--success-color);
           border: none;
           border-radius: 4px;
           cursor: pointer;
           transition: background-color 0.3s;
           margin: 0.5rem;
+          font-family: inherit;
         }
+        
         .play-button:hover, .play-again-button:hover {
-          background-color: #45a049;
+          background-color: var(--success-hover);
         }
+        
         .back-button {
-          background-color: #f44336;
+          background-color: var(--danger-color);
         }
+        
         .back-button:hover {
-          background-color: #d32f2f;
+          background-color: var(--danger-hover);
         }
+        
         .instructions {
           margin-top: 2rem;
           text-align: center;
         }
+        
         .instructions h3 {
           margin-bottom: 1rem;
+          color: var(--text-color);
         }
+        
         .instructions p {
           margin: 0.5rem 0;
+          color: var(--text-color);
         }
+        
         .game-screen {
           position: relative;
         }
+        
+        .game-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          width: 100%;
+          margin-bottom: 1rem;
+          margin-top: 1rem;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+        
+        .game-controls {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .quit-button {
+          padding: 0.4rem 1rem;
+          font-size: 1rem;
+          color: white;
+          background-color: var(--danger-color);
+          border: none;
+          border-radius: 4px;
+          transition: background-color 0.3s;
+        }
+        
+        .quit-button:hover {
+          background-color: var(--danger-hover);
+        }
+        
         .game-info {
           display: flex;
           justify-content: space-between;
-          width: 100%;
-          margin-bottom: 1rem;
+          width: 60%;
         }
+        
         .n-value, .trial-counter {
           font-size: 1.2rem;
-          font-weight: bold;
+          font-weight: 500;
         }
+        
+        /* Responsive design for grid sizes */
         .grid-container {
           display: flex;
           flex-direction: column;
           margin: 2rem 0;
+          width: 100%;
+          max-width: 320px;
+          aspect-ratio: 1/1;
         }
+        
         .grid-row {
           display: flex;
+          flex: 1;
         }
+        
         .grid-cell {
-          width: 80px;
-          height: 80px;
-          border: 1px solid #ddd;
+          flex: 1;
+          border: 1px solid var(--border-color);
           margin: 2px;
-          background-color: #f9f9f9;
+          background-color: var(--cell-bg);
           transition: background-color 0.3s;
+          aspect-ratio: 1/1;
         }
+        
         .grid-cell.active {
-          background-color: #2196F3;
+          background-color: var(--cell-active);
         }
+        
         .response-indicators {
           display: flex;
           justify-content: space-around;
           width: 100%;
           margin-top: 1rem;
+          flex-wrap: wrap;
+          gap: 0.5rem;
         }
+        
         .indicator {
-          padding: 0.5rem 1rem;
+          flex: 1;
+          min-width: 120px;
+          padding: 0.8rem 0.5rem;
           margin: 0 0.5rem;
           border-radius: 4px;
-          background-color: #ddd;
-          transition: background-color 0.3s;
+          background-color: var(--indicator-bg);
+          transition: all 0.3s ease;
           cursor: pointer;
           user-select: none;
+          font-weight: 500;
+          text-align: center;
         }
+        
         .indicator:hover {
-          background-color: #ccc;
+          background-color: var(--indicator-hover);
         }
+        
         .indicator.active {
-          background-color: #4CAF50;
+          background-color: var(--indicator-active);
           color: white;
         }
+        
         .result-screen {
           text-align: center;
         }
+        
         .result-screen h2 {
-          margin-bottom: 2rem;
-          color: #333;
+          margin-bottom: 1.5rem;
+          color: var(--text-color);
+          margin-top: 1rem;
         }
+        
         .results {
           width: 100%;
-          margin-bottom: 2rem;
+          margin-bottom: 1.5rem;
+          padding: 0 0.5rem;
+          box-sizing: border-box;
         }
+        
         .result-item {
           display: flex;
           justify-content: space-between;
           padding: 0.5rem 0;
-          border-bottom: 1px solid #eee;
+          border-bottom: 1px solid var(--result-border);
         }
+        
         .result-item.score {
           margin-top: 1rem;
           font-size: 1.5rem;
-          font-weight: bold;
+          font-weight: 600;
           border-bottom: none;
         }
+        
+        .result-buttons {
+          display: flex;
+          justify-content: center;
+          flex-wrap: wrap;
+          width: 100%;
+          gap: 0.5rem;
+        }
+        
         .help-screen {
           max-width: 800px;
           max-height: 80vh;
           overflow-y: auto;
-          padding: 2rem;
+          padding: 1.5rem;
+          width: 100%;
+          box-sizing: border-box;
         }
+        
         .help-screen h1 {
-          color: #2196F3;
+          color: var(--primary-color);
           margin-bottom: 1.5rem;
           text-align: center;
+          margin-top: 1rem;
         }
+        
         .help-section {
           margin-bottom: 2rem;
           text-align: left;
           width: 100%;
         }
+        
         .help-section h2 {
-          color: #333;
-          border-bottom: 2px solid #eee;
+          color: var(--text-color);
+          border-bottom: 2px solid var(--border-color);
           padding-bottom: 0.5rem;
           margin-bottom: 1rem;
         }
+        
         .help-section p, .help-section li {
           margin-bottom: 0.5rem;
           line-height: 1.5;
+          color: var(--text-color);
         }
+        
         .help-section ul, .help-section ol {
           padding-left: 1.5rem;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+          .screen {
+            padding: 1rem;
+            margin-top: 0.5rem;
+            width: 95%;
+          }
+          
+          .grid-container {
+            margin: 1rem 0;
+          }
+          
+          .game-info {
+            width: 100%;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+          }
+          
+          .result-buttons {
+            flex-direction: column;
+            width: 100%;
+          }
+          
+          .play-button, .play-again-button, .back-button {
+            width: 100%;
+            margin: 0.3rem 0;
+          }
+          
+          h1 {
+            font-size: 1.5rem;
+          }
+          
+          h2 {
+            font-size: 1.3rem;
+          }
+          
+          .top-controls {
+            top: 0.5rem;
+            right: 0.5rem;
+          }
+        }
+        
+        @media (max-width: 480px) {
+          .response-indicators {
+            flex-direction: column;
+          }
+          
+          .indicator {
+            margin: 0.3rem 0;
+            width: 100%;
+          }
+          
+          .game-header {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          
+          .game-controls {
+            align-self: flex-end;
+          }
+          
+          .help-section {
+            padding: 0 0.5rem;
+          }
+          
+          .n-selector {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+          }
+          
+          .n-selector label {
+            margin-right: 0;
+          }
         }
       `}</style>
     </div>
