@@ -433,7 +433,45 @@ const DualNBackGame = () => {
     if (gameState === 'playing' && currentTrial < trials.length) {
       const speak = () => {
         if (audioRef.current) {
+          // Set the text to the current letter
           audioRef.current.text = trials[currentTrial].letter.toLowerCase();
+          
+          // Get all available voices
+          const voices = window.speechSynthesis.getVoices();
+          
+          // Try to find an optimal voice based on common high-quality options
+          // Prioritize certain voices known for clarity
+          const preferredVoices = [
+            // English voices that tend to be clear
+            'Google US English', 'Google UK English Female', 
+            'Microsoft David', 'Microsoft Zira',
+            'Alex', // macOS high quality voice
+            'Daniel', // Clear male voice on some systems
+            'Samantha', // Clear female voice on some systems
+          ];
+          
+          // Try to find a preferred voice first
+          let selectedVoice = null;
+          for (const preferred of preferredVoices) {
+            const foundVoice = voices.find(voice => 
+              voice.name.includes(preferred) && (voice.lang.startsWith('en'))
+            );
+            if (foundVoice) {
+              selectedVoice = foundVoice;
+              break;
+            }
+          }
+          
+          // If no preferred voice is found, try to select any English voice
+          if (!selectedVoice) {
+            selectedVoice = voices.find(voice => voice.lang.startsWith('en'));
+          }
+          
+          // If we found a suitable voice, use it
+          if (selectedVoice) {
+            audioRef.current.voice = selectedVoice;
+          }
+          
           speechSynthesis.speak(audioRef.current);
         }
       };
@@ -443,8 +481,18 @@ const DualNBackGame = () => {
       audioRef.current.rate = 1;
       audioRef.current.pitch = 1;
       
-      window.speechSynthesis.cancel();
-      speak();
+      // Some browsers need a small delay to load voices
+      if (window.speechSynthesis.getVoices().length === 0) {
+        // If no voices are available yet, set up an event listener
+        window.speechSynthesis.onvoiceschanged = () => {
+          window.speechSynthesis.onvoiceschanged = null;
+          speak();
+        };
+      } else {
+        // Voices are already available
+        window.speechSynthesis.cancel();
+        speak();
+      }
     }
   }, [gameState, currentTrial, trials]);
   
